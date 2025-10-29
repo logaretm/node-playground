@@ -1,0 +1,9 @@
+{
+  "version": "v1",
+  "packages": {
+    "unstorage": {
+      "signature": "f4bff4a7ac9cc4fbeb27ce1d62dd27f5",
+      "file": true
+    }
+  }
+}

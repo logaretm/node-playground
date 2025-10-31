@@ -1,21 +1,16 @@
 import './instrument.ts';
 import Fastify from 'fastify';
 import * as Sentry from '@sentry/node';
-import { createStorage } from 'unstorage';
-import redisDriver from 'unstorage/drivers/redis';
+import { createStorage } from './storage.ts';
 import { tracingChannel } from 'diagnostics_channel';
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomUUID } from 'node:crypto';
 import type { Span } from '@sentry/node';
-import { SPAN_STATUS_ERROR, SPAN_STATUS_OK } from '@sentry/core';
+import {
+  SEMANTIC_ATTRIBUTE_CACHE_KEY,
+  SPAN_STATUS_ERROR,
+  SPAN_STATUS_OK,
+} from '@sentry/core';
 
-const storage = createStorage({
-  driver: redisDriver({
-    base: 'unstorage',
-    host: 'localhost',
-    port: 6379,
-  }),
-});
+const storage = createStorage();
 
 const fastify = Fastify({
   logger: true,
@@ -25,74 +20,51 @@ Sentry.setupFastifyErrorHandler(fastify);
 
 const unstorageChannel = tracingChannel<
   {},
-  { op: string; key: string; span?: Span; done?: () => void }
+  { op: string; key: string; span?: Span; resolve?: () => void }
 >('unjs.unstorage');
 
 unstorageChannel.subscribe({
   start: (data) => {
-    console.log('==========');
-    const promise = new Promise((resolve) => {
-      data.done = () => {
-        resolve(true);
-        console.log('done!!!!!!');
-      };
+    const p = new Promise<void>((resolve) => {
+      data.resolve = resolve;
     });
+
     Sentry.startSpanManual(
       {
-        name: `${data.op}: ${data.key}`,
-        op: data.op,
+        name: 'unstorage',
+        op: `${data.op} ${data.key}`,
         attributes: {
-          ['cache.key']: data.key,
+          [SEMANTIC_ATTRIBUTE_CACHE_KEY]: data.key,
+          op: data.op,
         },
       },
-      async (span) => {
-        data.span = span;
-        await promise;
+      async (s) => {
+        data.span = s;
+        await p;
       }
     );
-
-    console.log('start', data);
-    console.log('==========');
   },
-  end: (data) => {
-    // NOTHING
+  asyncEnd(data) {
+    data.resolve?.();
+    data.span?.setStatus({ code: SPAN_STATUS_OK });
+    data.span?.end();
   },
-  asyncStart: (data) => {
-    // NOTHING
+  error(data) {
+    data.resolve?.();
+    data.span?.setStatus({ code: SPAN_STATUS_ERROR });
+    data.span?.end();
   },
-  asyncEnd: (data) => {
-    console.log('==========');
-    console.log('asyncEnd', data);
-    const { span, done } = data;
-    if (!span) {
-      return;
-    }
-
-    span.setStatus({ code: SPAN_STATUS_OK });
-    done?.();
-    span.end();
-    console.log('==========');
-  },
-  error: (data) => {
-    // NOTHING
-    const { span, done } = data;
-    if (!span) {
-      return;
-    }
-
-    span.setStatus({ code: SPAN_STATUS_ERROR });
-    Sentry.captureException(data.error);
-    done?.();
-  },
+  end() {},
+  asyncStart() {},
 });
 
 fastify.get('/', async (request, reply) => {
   let value = await storage.getItem('count');
-  if (value === null) {
+  if (!value) {
     value = 0;
   }
-  // value = (value as number) + 1;
-  // await storage.setItem('count', value);
+  value = (value as number) + 1;
+  await storage.setItem('count', value);
 
   return { count: value };
 });

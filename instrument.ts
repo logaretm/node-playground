@@ -1,7 +1,8 @@
 import * as Sentry from '@sentry/node';
+import 'dotenv/config';
 
 Sentry.init({
-  dsn: 'https://ac9708bcfa9500823450f4b62eba0db7@o447951.ingest.us.sentry.io/4510141894164480',
+  dsn: process.env.SENTRY_DSN,
 
   // Add Tracing by setting tracesSampleRate
   tracesSampleRate: 1.0,

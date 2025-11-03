@@ -22,5 +22,5 @@ Sentry.init({
   //   Sentry.pinoIntegration(),
   // ],
 
-  debug: true,
+  debug: false,
 });

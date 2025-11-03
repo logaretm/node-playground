@@ -1,0 +1,14 @@
+{
+  "name": "repro-bare",
+  "version": "1.0.0",
+  "description": "Bare Node.js reproduction for tracePromise context propagation issue (no dependencies)",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT"
+}
+

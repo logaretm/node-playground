@@ -5,8 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.ts",
-    "start:import": "node --import ./instrument.ts index.ts",
+    "dev": "node --import ./instrument.ts index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -20,7 +19,11 @@
     "dotenv": "^17.2.3",
     "fastify": "^4.29.0",
     "ioredis": "^5.8.2",
-    "pino": "^9.7.0",
-    "unstorage": "file:.yalc/unstorage"
+    "pino": "^9.7.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@sentry/opentelemetry": "file:.yalc/@sentry/opentelemetry"
+    }
   }
 }

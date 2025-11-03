@@ -1,5 +1,5 @@
-import { tracingChannel } from 'node:diagnostics_channel';
-import { startSpan } from '@sentry/node';
+import { tracingChannelFixed } from './tracingChannelFixed.ts';
+import { startSpan, getActiveSpan } from '@sentry/node';
 import { SPAN_STATUS_OK } from '@sentry/core';
 
 interface StorageData {
@@ -7,7 +7,10 @@ interface StorageData {
   key: string;
 }
 
-const channel = tracingChannel<{}, StorageData>('unjs.unstorage');
+// 📚 LIBRARY CODE: Use tracingChannelFixed for proper context propagation
+// Note: This is vendor-neutral - no binding, no spans, just event publishing
+// The instrumentation code (index.ts) handles binding and span creation
+const channel = tracingChannelFixed<StorageData>('unjs.unstorage');
 
 export function createStorage() {
   const store = new Map<string, any>();
@@ -18,8 +21,8 @@ export function createStorage() {
       key,
     };
 
-    return channel.tracePromise(() => {
-      // console.log('getItem parent span', getActiveSpan());
+    return channel.tracePromise(async () => {
+      console.log('getItem - active span:', getActiveSpan()?.spanContext().spanId || 'none');
 
       return startSpan(
         {
@@ -44,8 +47,8 @@ export function createStorage() {
       key,
     };
 
-    return channel.tracePromise(() => {
-      // console.log('setItem parent span', getActiveSpan());
+    return channel.tracePromise(async () => {
+      console.log('setItem - active span:', getActiveSpan()?.spanContext().spanId || 'none');
 
       return startSpan(
         {

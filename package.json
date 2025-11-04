@@ -19,11 +19,7 @@
     "dotenv": "^17.2.3",
     "fastify": "^4.29.0",
     "ioredis": "^5.8.2",
+    "otel-tracing-channel": "^0.1.0",
     "pino": "^9.7.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "@sentry/opentelemetry": "file:.yalc/@sentry/opentelemetry"
-    }
   }
 }

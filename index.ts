@@ -2,14 +2,12 @@ import './instrument.ts';
 import Fastify from 'fastify';
 import * as Sentry from '@sentry/node';
 import { createStorage } from './storage.ts';
-import { tracingChannelFixed } from './tracingChannelFixed.ts';
-import type { Span } from '@sentry/node';
+import { tracingChannel, setDebugFlag } from 'otel-tracing-channel';
 import {
   SEMANTIC_ATTRIBUTE_CACHE_KEY,
   SPAN_STATUS_ERROR,
   SPAN_STATUS_OK,
 } from '@sentry/core';
-import { context, trace } from '@opentelemetry/api';
 
 const storage = createStorage();
 
@@ -19,81 +17,51 @@ const fastify = Fastify({
 
 Sentry.setupFastifyErrorHandler(fastify);
 
-// 🔧 INSTRUMENTATION CODE: Subscribe to the same channel the library uses
-// This is where vendor-specific (Sentry/OTel) code lives
-const unstorageChannel = tracingChannelFixed<
-  { op: string; key: string; span?: Span; resolve?: () => void }
->('unjs.unstorage');
+setDebugFlag(true);
 
-// 🔥 KEY: Bind AsyncLocalStorage - this is ONLY done by instrumentation code
-// The library doesn't need to know about this
-try {
-  const contextManager = (context as any)._getContextManager();
-  if (contextManager?._asyncLocalStorage) {
-    console.log('✅ Binding OpenTelemetry AsyncLocalStorage to unstorage channel');
-    unstorageChannel.bindStore(contextManager._asyncLocalStorage);
-  } else {
-    console.warn('⚠️  Could not access OpenTelemetry AsyncLocalStorage');
-  }
-} catch (err) {
-  console.warn('⚠️  Error accessing context manager:', err);
-}
+const unstorageChannel = tracingChannel<{
+  op: string;
+  key: string;
+  span?: any;
+}>('unjs.unstorage');
 
+// 🎯 Super clean API: Just return a span from start, context injection is automatic!
 unstorageChannel.subscribe({
   start: (data) => {
     console.log('🔹 unstorage start event:', data.op, data.key);
-    
-    // Debug: Check current context before creating span
-    const currentActiveSpan = trace.getActiveSpan();
-    console.log('🔍 Active span BEFORE startInactiveSpan:', currentActiveSpan?.spanContext().spanId || 'none');
-    
-    // 🔥 KEY: Start an inactive span and manually set it in context
-    const span = Sentry.startInactiveSpan({
-      name: 'unstorage',
-      op: `${data.op} ${data.key}`,
-      attributes: {
-        [SEMANTIC_ATTRIBUTE_CACHE_KEY]: data.key,
-        op: data.op,
+    const span = Sentry.startSpanManual(
+      {
+        name: 'unstorage',
+        op: `${data.op} ${data.key}`,
+        attributes: {
+          [SEMANTIC_ATTRIBUTE_CACHE_KEY]: data.key,
+          op: data.op,
+        },
       },
-    });
-    
-    console.log('🔍 Span created with parent:', (span as any).parentSpanContext?.spanId || 'none');
-    
-    if (span) {
-      console.log('🔹 unstorage span created:', data.op, data.key, 'spanId:', span.spanContext().spanId);
-      data.span = span;
-      
-      // 🔥 Store the span in channel data so tracingChannelFixed can use it
-      // Don't use enterWith here - let the fixed tracing channel handle context
-      const newContext = trace.setSpan(context.active(), span as any);
-      (data as any)._spanContext = newContext;
-      console.log('✅ Span context prepared! spanId:', span.spanContext().spanId);
-    }
+      (span) => span
+    );
+
+    data.span = span;
+
+    // 🔥 Just return it, the library handles the rest
+    return span;
   },
-  asyncEnd(data) {
-    // End the span
+  asyncEnd: (data) => {
     data.span?.setStatus({ code: SPAN_STATUS_OK });
     data.span?.end();
-    data.resolve?.();
   },
-  error(data) {
-    data.resolve?.();
+  error: (data) => {
     data.span?.setStatus({ code: SPAN_STATUS_ERROR });
     data.span?.end();
   },
-  end() {},
-  asyncStart() {},
 });
 
 fastify.get('/', async (_request, _reply) => {
-  let value = await storage.getItem('count');
-  if (!value) {
-    value = 0;
-  }
-  value = (value as number) + 1;
-  await storage.setItem('count', value);
+  let ps = [storage.getItem('count'), storage.getItem('count2')];
 
-  return { count: value };
+  await Promise.all(ps);
+
+  return { done: true };
 });
 
 // Run the server!

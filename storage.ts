@@ -1,5 +1,5 @@
-import { tracingChannelFixed } from './tracingChannelFixed.ts';
 import { startSpan, getActiveSpan } from '@sentry/node';
+import { tracingChannel } from 'otel-tracing-channel';
 import { SPAN_STATUS_OK } from '@sentry/core';
 
 interface StorageData {
@@ -7,10 +7,7 @@ interface StorageData {
   key: string;
 }
 
-// 📚 LIBRARY CODE: Use tracingChannelFixed for proper context propagation
-// Note: This is vendor-neutral - no binding, no spans, just event publishing
-// The instrumentation code (index.ts) handles binding and span creation
-const channel = tracingChannelFixed<StorageData>('unjs.unstorage');
+const channel = tracingChannel<StorageData>('unjs.unstorage');
 
 export function createStorage() {
   const store = new Map<string, any>();

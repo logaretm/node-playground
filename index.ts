@@ -18,7 +18,7 @@ const fastify = Fastify({
 
 Sentry.setupFastifyErrorHandler(fastify);
 
-const unstorageChannel = tracingChannel<{
+const channel = tracingChannel<{
   op: string;
   key: string;
   span?: any;
@@ -28,13 +28,9 @@ const unstorageChannel = tracingChannel<{
 const otelStorage = (context as any)._getContextManager()._asyncLocalStorage;
 
 if (otelStorage) {
-  console.log('✅ Setting up bindStore with OTel AsyncLocalStorage\n');
-
   // Bind start - create span in the transform
   // @ts-ignore - bindStore types don't account for AsyncLocalStorage of different type
-  unstorageChannel.start.bindStore(otelStorage, (data) => {
-    console.log('🔥 Creating span in bindStore transform:', data.op, data.key);
-
+  channel.start.bindStore(otelStorage, (data) => {
     const span = Sentry.startSpanManual(
       {
         name: 'unstorage',
@@ -52,27 +48,13 @@ if (otelStorage) {
     // Return the context to store in AsyncLocalStorage
     return trace.setSpan(context.active(), span);
   });
-
-  // Bind asyncStart - restore context
-  // @ts-ignore - bindStore types don't account for AsyncLocalStorage of different type
-  unstorageChannel.asyncStart.bindStore(otelStorage, (data) => {
-    if (data.span) {
-      return trace.setSpan(context.active(), data.span);
-    }
-    return context.active();
-  });
 } else {
-  console.log('⚠️  Could not access OTel AsyncLocalStorage\n');
+  console.warn('Could not access OTel AsyncLocalStorage\n');
 }
 
 // Subscribe to events (span already created in bindStore)
-unstorageChannel.subscribe({
-  start: (data) => {
-    console.log(
-      '📍 Start event - span already active:',
-      data.span?.spanContext().spanId
-    );
-  },
+channel.subscribe({
+  start: (data) => {},
   asyncStart: () => {},
   asyncEnd: (data) => {
     console.log('📍 AsyncEnd event - ending span');

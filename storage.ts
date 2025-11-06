@@ -1,5 +1,5 @@
 import { startSpan, getActiveSpan } from '@sentry/node';
-import { tracingChannel } from 'otel-tracing-channel';
+import { tracingChannel } from 'node:diagnostics_channel';
 import { SPAN_STATUS_OK } from '@sentry/core';
 
 interface StorageData {
@@ -7,7 +7,7 @@ interface StorageData {
   key: string;
 }
 
-const channel = tracingChannel<StorageData>('unjs.unstorage');
+const channel = tracingChannel<StorageData, StorageData>('unjs.unstorage');
 
 export function createStorage() {
   const store = new Map<string, any>();
@@ -19,7 +19,10 @@ export function createStorage() {
     };
 
     return channel.tracePromise(async () => {
-      console.log('getItem - active span:', getActiveSpan()?.spanContext().spanId || 'none');
+      console.log(
+        'getItem - active span:',
+        getActiveSpan()?.spanContext().spanId || 'none'
+      );
 
       return startSpan(
         {
@@ -45,7 +48,10 @@ export function createStorage() {
     };
 
     return channel.tracePromise(async () => {
-      console.log('setItem - active span:', getActiveSpan()?.spanContext().spanId || 'none');
+      console.log(
+        'setItem - active span:',
+        getActiveSpan()?.spanContext().spanId || 'none'
+      );
 
       return startSpan(
         {

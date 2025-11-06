@@ -2,7 +2,8 @@ import './instrument.ts';
 import Fastify from 'fastify';
 import * as Sentry from '@sentry/node';
 import { createStorage } from './storage.ts';
-import { tracingChannel, setDebugFlag } from 'otel-tracing-channel';
+import { tracingChannel } from 'node:diagnostics_channel';
+import { context, trace } from '@opentelemetry/api';
 import {
   SEMANTIC_ATTRIBUTE_CACHE_KEY,
   SPAN_STATUS_ERROR,
@@ -17,18 +18,23 @@ const fastify = Fastify({
 
 Sentry.setupFastifyErrorHandler(fastify);
 
-setDebugFlag(true);
-
 const unstorageChannel = tracingChannel<{
   op: string;
   key: string;
   span?: any;
 }>('unjs.unstorage');
 
-// 🎯 Super clean API: Just return a span from start, context injection is automatic!
-unstorageChannel.subscribe({
-  start: (data) => {
-    console.log('🔹 unstorage start event:', data.op, data.key);
+// Get OTel's AsyncLocalStorage for bindStore
+const otelStorage = (context as any)._getContextManager()._asyncLocalStorage;
+
+if (otelStorage) {
+  console.log('✅ Setting up bindStore with OTel AsyncLocalStorage\n');
+
+  // Bind start - create span in the transform
+  // @ts-ignore - bindStore types don't account for AsyncLocalStorage of different type
+  unstorageChannel.start.bindStore(otelStorage, (data) => {
+    console.log('🔥 Creating span in bindStore transform:', data.op, data.key);
+
     const span = Sentry.startSpanManual(
       {
         name: 'unstorage',
@@ -43,14 +49,39 @@ unstorageChannel.subscribe({
 
     data.span = span;
 
-    // 🔥 Just return it, the library handles the rest
-    return span;
+    // Return the context to store in AsyncLocalStorage
+    return trace.setSpan(context.active(), span);
+  });
+
+  // Bind asyncStart - restore context
+  // @ts-ignore - bindStore types don't account for AsyncLocalStorage of different type
+  unstorageChannel.asyncStart.bindStore(otelStorage, (data) => {
+    if (data.span) {
+      return trace.setSpan(context.active(), data.span);
+    }
+    return context.active();
+  });
+} else {
+  console.log('⚠️  Could not access OTel AsyncLocalStorage\n');
+}
+
+// Subscribe to events (span already created in bindStore)
+unstorageChannel.subscribe({
+  start: (data) => {
+    console.log(
+      '📍 Start event - span already active:',
+      data.span?.spanContext().spanId
+    );
   },
+  asyncStart: () => {},
   asyncEnd: (data) => {
+    console.log('📍 AsyncEnd event - ending span');
     data.span?.setStatus({ code: SPAN_STATUS_OK });
     data.span?.end();
   },
+  end: () => {},
   error: (data) => {
+    console.log('📍 Error event');
     data.span?.setStatus({ code: SPAN_STATUS_ERROR });
     data.span?.end();
   },
